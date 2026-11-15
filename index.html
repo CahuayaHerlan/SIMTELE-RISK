@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="description"
+        content="SIMTELE-RISK: proyecto académico de simulación y métodos numéricos.">
+
+    <title>SIMTELE-RISK | Métodos Numéricos</title>
+
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+    <header>
+        <div class="header-content">
+
+            <div class="logo">
+                SIMTELE<span>-RISK</span>
+            </div>
+
+            <div class="header-label">
+                PROYECTO INTEGRADOR<br>
+                COM-254 · MÉTODOS NUMÉRICOS I
+            </div>
+
+        </div>
+    </header>
+
+    <main>
+
+        <!-- PRESENTACIÓN -->
+
+        <section class="hero">
+
+            <span class="hero-label">
+                SIMULACIÓN Y ANÁLISIS NUMÉRICO
+            </span>
+
+            <h1>
+                Análisis de sistemas<br>
+                <span>y métodos numéricos</span>
+            </h1>
+
+            <p>
+                Plataforma académica para el estudio de cuatro casos
+                hipotéticos relacionados con el transporte por cable.
+                Permite analizar modelos matemáticos, ejecutar métodos
+                numéricos y comparar sus resultados.
+            </p>
+
+        </section>
+
+        <!-- CUATRO MÓDULOS -->
+
+        <section>
+
+            <div class="section-heading">
+                <h2>Casos de estudio</h2>
+                <p>
+                    Selecciona un módulo para consultar su modelo,
+                    planteamiento y escenarios.
+                </p>
+            </div>
+
+            <div id="casos" class="cases-grid"></div>
+
+        </section>
+
+        <!-- DETALLE DEL CASO -->
+
+        <section id="detalle-caso" class="panel">
+
+            <h2 id="titulo-caso">
+                Deterioro mecánico y mantenimiento
+            </h2>
+
+            <p id="descripcion-caso"></p>
+
+            <h3>Pregunta del caso</h3>
+            <p id="pregunta-caso"></p>
+
+            <h3>Modelo matemático</h3>
+
+            <div id="modelo-caso" class="model-box"></div>
+
+            <h3>Ecuaciones principales</h3>
+
+            <ul id="ecuaciones-caso" class="equations-list"></ul>
+
+            <h3>Métodos numéricos relacionados</h3>
+            <p id="metodos-caso"></p>
+
+            <h3>Escenarios definidos</h3>
+
+            <div
+                id="escenarios-caso"
+                class="scenarios-grid">
+            </div>
+
+        </section>
+
+        <!-- EXPERIMENTO DE SISTEMAS LINEALES -->
+
+        <section id="seccion-experimento" class="panel">
+
+            <h2>Experimento de sistemas lineales</h2>
+
+            <p>
+                En esta primera etapa se implementan los métodos
+                Jacobi, Gauss-Seidel, descomposición LU y gradiente
+                conjugado. Los tres escenarios se prueban sobre
+                un sistema lineal con solución de referencia conocida.
+            </p>
+
+            <h3>Configuración del experimento</h3>
+
+            <div class="controls-grid">
+
+                <div class="control-group">
+
+                    <label for="escenario">
+                        Escenario
+                    </label>
+
+                    <select id="escenario">
+                        <option value="NORMAL">Normal</option>
+                        <option value="ESTRES">Estrés</option>
+                        <option value="MAL_CONDICIONADO">
+                            Mal condicionado
+                        </option>
+                    </select>
+
+                </div>
+
+                <div class="control-group">
+
+                    <label for="metodo">
+                        Método numérico
+                    </label>
+
+                    <select id="metodo">
+                        <option value="jacobi">Jacobi</option>
+                        <option value="gauss-seidel">Gauss-Seidel</option>
+                        <option value="lu">Descomposición LU</option>
+                        <option value="gradiente">
+                            Gradiente conjugado
+                        </option>
+                    </select>
+
+                </div>
+
+                <div class="control-group">
+
+                    <label for="tolerancia">
+                        Tolerancia
+                    </label>
+
+                    <input
+                        type="number"
+                        id="tolerancia"
+                        value="0.00000001"
+                        min="0.0000000001"
+                        step="any">
+
+                </div>
+
+                <div class="control-group">
+
+                    <label for="max-iter">
+                        Máximo de iteraciones
+                    </label>
+
+                    <input
+                        type="number"
+                        id="max-iter"
+                        value="500"
+                        min="1"
+                        max="10000">
+
+                </div>
+
+            </div>
+
+            <div class="actions">
+
+                <button id="ejecutar">
+                    Ejecutar método
+                </button>
+
+                <button
+                    id="guardar"
+                    class="secondary-button"
+                    disabled>
+                    Guardar simulación
+                </button>
+
+            </div>
+
+            <p id="mensaje-estado">
+                Inicializando aplicación...
+            </p>
+
+            <!-- RESULTADOS -->
+
+            <div id="resultado"></div>
+
+            <!-- TABLA DE ITERACIONES -->
+
+            <h3>Tabla de iteraciones</h3>
+
+            <div
+                id="tabla-iteraciones"
+                class="table-wrapper">
+            </div>
+
+            <!-- TABLA DE ERRORES -->
+
+            <h3>Tabla de errores</h3>
+
+            <div
+                id="tabla-errores"
+                class="table-wrapper">
+            </div>
+
+        </section>
+
+        <!-- HISTORIAL -->
+
+        <section class="panel">
+
+            <h2>Historial de simulaciones</h2>
+
+            <p>
+                Consulta los experimentos guardados anteriormente
+                en la base de datos local del navegador.
+            </p>
+
+            <div id="historial">
+                <p>Cargando historial...</p>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer>
+
+        <p>
+            <strong>SIMTELE-RISK</strong>
+            · Proyecto académico de Métodos Numéricos I
+        </p>
+
+        <p>
+            Universidad Mayor de San Andrés · Ingeniería de Sistemas
+        </p>
+
+        <p>
+            Los escenarios y datos utilizados son hipotéticos
+            y tienen fines exclusivamente académicos.
+        </p>
+
+    </footer>
+
+    <script type="module" src="js/app.js"></script>
+
+</body>
+</html>
