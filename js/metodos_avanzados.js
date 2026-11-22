@@ -1,642 +1,1140 @@
 
-import { ejecutarMetodo } from "./metodos.js";
-import { escenariosLineales, parametrosCasos } from "./datos.js";
-import { calcularErrorEscalar } from "./errores.js";
+/* ==========================================================
+   SIMTELE-RISK
+   METODOS NUMERICOS AVANZADOS Y GRAFICOS
+   ========================================================== */
 
-function biseccion(f, a, b, tol, max) {
-    let fa = f(a);
-    let fb = f(b);
+(function () {
+    "use strict";
 
-    if (fa * fb > 0) {
-        throw new Error("Bisección necesita un intervalo con cambio de signo.");
-    }
-
-    const filas = [];
-    let m = a;
-
-    for (let i = 1; i <= max; i++) {
-        m = (a + b) / 2;
-        const fm = f(m);
-        const error = Math.abs(b - a) / 2;
-
-        filas.push({
-            numero: i, a, b,
-            aproximacion: m,
-            error,
-            residual: Math.abs(fm)
-        });
-
-        if (Math.abs(fm) <= tol || error <= tol) break;
-
-        if (fa * fm < 0) {
-            b = m;
-            fb = fm;
-        } else {
-            a = m;
-            fa = fm;
-        }
-    }
-
-    return {
-        valor: m,
-        iteraciones: filas,
-        convergio: Math.abs(f(m)) <= tol || filas.at(-1).error <= tol,
-        residual: Math.abs(f(m))
+    const CONFIG = {
+        iteraciones: 100,
+        tolerancia: 0.000001
     };
-}
 
-function newtonRaphson(f, df, x, tol, max) {
-    const filas = [];
+    // ------------------------------------------------------
+    // FUNCIONES GENERALES
+    // ------------------------------------------------------
 
-    for (let i = 1; i <= max; i++) {
-        const derivada = df(x);
+    function validarNumero(valor, nombre) {
+        const numero = Number(valor);
 
-        if (Math.abs(derivada) < 1e-14) {
-            throw new Error("Newton-Raphson encontró una derivada demasiado pequeña.");
+        if (!Number.isFinite(numero)) {
+            throw new Error("El valor de " + nombre + " no es válido.");
         }
 
-        const nuevo = x - f(x) / derivada;
-        const error = Math.abs(nuevo - x);
-        const residual = Math.abs(f(nuevo));
-
-        filas.push({
-            numero: i,
-            aproximacion: nuevo,
-            error,
-            residual
-        });
-
-        x = nuevo;
-
-        if (error <= tol || residual <= tol) break;
+        return numero;
     }
 
-    return {
-        valor: x,
-        iteraciones: filas,
-        convergio: Math.abs(f(x)) <= tol || filas.at(-1).error <= tol,
-        residual: Math.abs(f(x))
-    };
-}
+    function redondear(numero, decimales = 6) {
+        return Number(numero.toFixed(decimales));
+    }
 
-function secante(f, x0, x1, tol, max) {
-    const filas = [];
-    let x = x1;
+    function crearPuntos(inicio, fin, cantidad, funcion) {
+        const puntos = [];
 
-    for (let i = 1; i <= max; i++) {
-        const f0 = f(x0);
-        const f1 = f(x1);
-        const denominador = f1 - f0;
+        for (let i = 0; i <= cantidad; i++) {
+            const x = inicio + (fin - inicio) * i / cantidad;
 
-        if (Math.abs(denominador) < 1e-14) {
-            throw new Error("La secante encontró un denominador demasiado pequeño.");
+            puntos.push({
+                x: x,
+                y: funcion(x)
+            });
         }
 
-        x = x1 - f1 * (x1 - x0) / denominador;
-
-        const error = Math.abs(x - x1);
-        const residual = Math.abs(f(x));
-
-        filas.push({
-            numero: i,
-            aproximacion: x,
-            error,
-            residual
-        });
-
-        x0 = x1;
-        x1 = x;
-
-        if (error <= tol || residual <= tol) break;
+        return puntos;
     }
 
-    return {
-        valor: x,
-        iteraciones: filas,
-        convergio: Math.abs(f(x)) <= tol || filas.at(-1).error <= tol,
-        residual: Math.abs(f(x))
-    };
-}
+    // ------------------------------------------------------
+    // 1. METODO DE BISECCION
+    // ------------------------------------------------------
 
-function trapecioCompuesto(f, a, b, n) {
-    const h = (b - a) / n;
-    let suma = (f(a) + f(b)) / 2;
+    function biseccion(f, a, b, tolerancia = CONFIG.tolerancia) {
+        let fa = f(a);
+        let fb = f(b);
 
-    for (let i = 1; i < n; i++) {
-        suma += f(a + i * h);
-    }
-
-    return suma * h;
-}
-
-function simpson13Compuesto(f, a, b, n) {
-    if (n % 2 !== 0) n++;
-
-    const h = (b - a) / n;
-    let suma = f(a) + f(b);
-
-    for (let i = 1; i < n; i++) {
-        suma += (i % 2 === 0 ? 2 : 4) * f(a + i * h);
-    }
-
-    return suma * h / 3;
-}
-
-function romberg(f, a, b, niveles) {
-    const R = [];
-
-    for (let k = 0; k < niveles; k++) {
-        R[k] = [];
-        R[k][0] = trapecioCompuesto(f, a, b, 2 ** k);
-
-        for (let j = 1; j <= k; j++) {
-            R[k][j] = R[k][j - 1] +
-                (R[k][j - 1] - R[k - 1][j - 1]) / (4 ** j - 1);
-        }
-    }
-
-    return R;
-}
-
-function integrarEDO(f, t0, estado0, tf, h, orden) {
-    const filas = [];
-    let t = t0;
-    let y = [...estado0];
-
-    const pasos = Math.max(1, Math.ceil((tf - t0) / h));
-    const paso = (tf - t0) / pasos;
-
-    const sumar = (a, b, factor) =>
-        a.map((valor, i) => valor + factor * b[i]);
-
-    filas.push({ t, valores: [...y] });
-
-    for (let i = 1; i <= pasos; i++) {
-        const k1 = f(t, y);
-        let nuevo;
-
-        if (orden === 2) {
-            const k2 = f(t + paso / 2, sumar(y, k1, paso / 2));
-            nuevo = sumar(y, k2, paso);
-        } else {
-            const k2 = f(t + paso / 2, sumar(y, k1, paso / 2));
-            const k3 = f(t + paso / 2, sumar(y, k2, paso / 2));
-            const k4 = f(t + paso, sumar(y, k3, paso));
-
-            nuevo = y.map((valor, j) =>
-                valor + paso * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]) / 6
+        if (fa * fb > 0) {
+            throw new Error(
+                "El intervalo no contiene un cambio de signo."
             );
         }
 
-        y = nuevo;
-        t = t0 + i * paso;
-        filas.push({ t, valores: [...y] });
+        let medio = 0;
+        let error = Infinity;
+        let iteracion = 0;
+
+        while (
+            error > tolerancia &&
+            iteracion < CONFIG.iteraciones
+        ) {
+            medio = (a + b) / 2;
+
+            const fm = f(medio);
+
+            error = Math.abs(b - a) / 2;
+
+            if (Math.abs(fm) < tolerancia) {
+                break;
+            }
+
+            if (fa * fm < 0) {
+                b = medio;
+                fb = fm;
+            } else {
+                a = medio;
+                fa = fm;
+            }
+
+            iteracion++;
+        }
+
+        return {
+            metodo: "Bisección",
+            resultado: medio,
+            error: error,
+            iteraciones: iteracion,
+            convergio: error <= tolerancia
+        };
     }
 
-    return { filas, resultado: y, paso };
-}
+    // ------------------------------------------------------
+    // 2. METODO DE NEWTON-RAPHSON
+    // ------------------------------------------------------
 
-function lagrange(x, y, xp) {
-    let total = 0;
+    function newton(f, x0, tolerancia = CONFIG.tolerancia) {
+        let x = x0;
+        let error = Infinity;
+        let iteracion = 0;
 
-    for (let i = 0; i < x.length; i++) {
-        let termino = y[i];
+        function derivada(valor) {
+            const h = 0.000001;
 
-        for (let j = 0; j < x.length; j++) {
-            if (j !== i) {
-                termino *= (xp - x[j]) / (x[i] - x[j]);
+            return (
+                f(valor + h) - f(valor - h)
+            ) / (2 * h);
+        }
+
+        while (
+            error > tolerancia &&
+            iteracion < CONFIG.iteraciones
+        ) {
+            const fx = f(x);
+            const dfx = derivada(x);
+
+            if (Math.abs(dfx) < 1e-12) {
+                throw new Error(
+                    "La derivada es demasiado pequeña."
+                );
+            }
+
+            const nuevo = x - fx / dfx;
+
+            error = Math.abs(nuevo - x);
+
+            x = nuevo;
+            iteracion++;
+        }
+
+        return {
+            metodo: "Newton-Raphson",
+            resultado: x,
+            error: error,
+            iteraciones: iteracion,
+            convergio: error <= tolerancia
+        };
+    }
+
+    // ------------------------------------------------------
+    // 3. METODO DE LA SECANTE
+    // ------------------------------------------------------
+
+    function secante(f, x0, x1, tolerancia = CONFIG.tolerancia) {
+        let error = Infinity;
+        let iteracion = 0;
+
+        while (
+            error > tolerancia &&
+            iteracion < CONFIG.iteraciones
+        ) {
+            const f0 = f(x0);
+            const f1 = f(x1);
+
+            const denominador = f1 - f0;
+
+            if (Math.abs(denominador) < 1e-12) {
+                throw new Error(
+                    "No se puede continuar con el método de la secante."
+                );
+            }
+
+            const nuevo = x1 - (
+                f1 * (x1 - x0)
+            ) / denominador;
+
+            error = Math.abs(nuevo - x1);
+
+            x0 = x1;
+            x1 = nuevo;
+
+            iteracion++;
+        }
+
+        return {
+            metodo: "Secante",
+            resultado: x1,
+            error: error,
+            iteraciones: iteracion,
+            convergio: error <= tolerancia
+        };
+    }
+
+    // ------------------------------------------------------
+    // 4. EULER MEJORADO - HEUN
+    // ------------------------------------------------------
+
+    function heun(f, y0, t0, tf, h) {
+        const resultados = [];
+
+        let t = t0;
+        let y = y0;
+
+        resultados.push({ x: t, y: y });
+
+        while (t < tf - 1e-10) {
+            const paso = Math.min(h, tf - t);
+
+            const k1 = f(t, y);
+            const k2 = f(t + paso, y + paso * k1);
+
+            y = y + paso * (k1 + k2) / 2;
+            t += paso;
+
+            resultados.push({ x: t, y: y });
+        }
+
+        return resultados;
+    }
+
+    // ------------------------------------------------------
+    // 5. RUNGE-KUTTA DE CUARTO ORDEN
+    // ------------------------------------------------------
+
+    function rungeKutta4(f, y0, t0, tf, h) {
+        const resultados = [];
+
+        let t = t0;
+        let y = y0;
+
+        resultados.push({ x: t, y: y });
+
+        while (t < tf - 1e-10) {
+            const paso = Math.min(h, tf - t);
+
+            const k1 = f(t, y);
+            const k2 = f(t + paso / 2, y + paso * k1 / 2);
+            const k3 = f(t + paso / 2, y + paso * k2 / 2);
+            const k4 = f(t + paso, y + paso * k3);
+
+            y += paso * (
+                k1 + 2 * k2 + 2 * k3 + k4
+            ) / 6;
+
+            t += paso;
+
+            resultados.push({ x: t, y: y });
+        }
+
+        return resultados;
+    }
+
+    // ------------------------------------------------------
+    // 6. OSCILACIONES - RUNGE KUTTA PARA SISTEMA
+    // ------------------------------------------------------
+
+    function oscilacionRK4(y0, v0, masa, amortiguamiento,
+                           rigidez, tf, h) {
+
+        const resultados = [];
+
+        let t = 0;
+        let y = y0;
+        let v = v0;
+
+        function aceleracion(posicion, velocidad) {
+            return (
+                -amortiguamiento * velocidad -
+                rigidez * posicion
+            ) / masa;
+        }
+
+        resultados.push({
+            x: t,
+            y: y,
+            velocidad: v
+        });
+
+        while (t < tf - 1e-10) {
+            const paso = Math.min(h, tf - t);
+
+            const k1y = v;
+            const k1v = aceleracion(y, v);
+
+            const k2y = v + paso * k1v / 2;
+            const k2v = aceleracion(
+                y + paso * k1y / 2,
+                v + paso * k1v / 2
+            );
+
+            const k3y = v + paso * k2v / 2;
+            const k3v = aceleracion(
+                y + paso * k2y / 2,
+                v + paso * k2v / 2
+            );
+
+            const k4y = v + paso * k3v;
+            const k4v = aceleracion(
+                y + paso * k3y,
+                v + paso * k3v
+            );
+
+            y += paso * (
+                k1y + 2 * k2y + 2 * k3y + k4y
+            ) / 6;
+
+            v += paso * (
+                k1v + 2 * k2v + 2 * k3v + k4v
+            ) / 6;
+
+            t += paso;
+
+            resultados.push({
+                x: t,
+                y: y,
+                velocidad: v
+            });
+        }
+
+        return resultados;
+    }
+
+    // ------------------------------------------------------
+    // 7. INTERPOLACION DE LAGRANGE
+    // ------------------------------------------------------
+
+    function lagrange(datos, x) {
+        let resultado = 0;
+
+        for (let i = 0; i < datos.length; i++) {
+            let termino = datos[i].y;
+
+            for (let j = 0; j < datos.length; j++) {
+                if (i !== j) {
+                    const denominador =
+                        datos[i].x - datos[j].x;
+
+                    if (denominador === 0) {
+                        throw new Error(
+                            "Los valores X no pueden repetirse."
+                        );
+                    }
+
+                    termino *= (
+                        x - datos[j].x
+                    ) / denominador;
+                }
+            }
+
+            resultado += termino;
+        }
+
+        return resultado;
+    }
+
+    // ------------------------------------------------------
+    // 8. INTEGRACION - TRAPECIO
+    // ------------------------------------------------------
+
+    function trapecio(f, a, b, n) {
+        if (n < 1) {
+            throw new Error("El número de divisiones debe ser positivo.");
+        }
+
+        const h = (b - a) / n;
+
+        let suma = (f(a) + f(b)) / 2;
+
+        for (let i = 1; i < n; i++) {
+            suma += f(a + i * h);
+        }
+
+        return suma * h;
+    }
+
+    // ------------------------------------------------------
+    // 9. INTEGRACION - SIMPSON 1/3
+    // ------------------------------------------------------
+
+    function simpson(f, a, b, n) {
+        if (n < 2 || n % 2 !== 0) {
+            throw new Error(
+                "Simpson requiere un número par de divisiones."
+            );
+        }
+
+        const h = (b - a) / n;
+
+        let suma = f(a) + f(b);
+
+        for (let i = 1; i < n; i++) {
+            const x = a + i * h;
+
+            if (i % 2 === 0) {
+                suma += 2 * f(x);
+            } else {
+                suma += 4 * f(x);
             }
         }
 
-        total += termino;
+        return suma * h / 3;
     }
 
-    return total;
-}
+    // ------------------------------------------------------
+    // GRAFICOS CON CANVAS
+    // ------------------------------------------------------
 
-function newtonInterpolacion(x, y, xp) {
-    const n = x.length;
-    const d = [...y];
-
-    for (let j = 1; j < n; j++) {
-        for (let i = n - 1; i >= j; i--) {
-            d[i] = (d[i] - d[i - 1]) / (x[i] - x[i - j]);
-        }
-    }
-
-    let resultado = d[n - 1];
-
-    for (let i = n - 2; i >= 0; i--) {
-        resultado = resultado * (xp - x[i]) + d[i];
-    }
-
-    return resultado;
-}
-
-function splineNatural(x, y, xp) {
-    const n = x.length;
-    const h = x.slice(1).map((v, i) => v - x[i]);
-
-    const alpha = new Array(n).fill(0);
-    const l = new Array(n).fill(1);
-    const mu = new Array(n).fill(0);
-    const z = new Array(n).fill(0);
-    const c = new Array(n).fill(0);
-    const b = new Array(n - 1).fill(0);
-    const d = new Array(n - 1).fill(0);
-
-    for (let i = 1; i < n - 1; i++) {
-        alpha[i] =
-            3 * (y[i + 1] - y[i]) / h[i] -
-            3 * (y[i] - y[i - 1]) / h[i - 1];
-    }
-
-    for (let i = 1; i < n - 1; i++) {
-        l[i] = 2 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1];
-
-        if (Math.abs(l[i]) < 1e-14) {
-            throw new Error("No se puede construir el spline con estos nodos.");
+    function dibujarGrafico(canvas, puntos, titulo) {
+        if (!canvas || !puntos || puntos.length === 0) {
+            return;
         }
 
-        mu[i] = h[i] / l[i];
-        z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i];
-    }
+        const contexto = canvas.getContext("2d");
 
-    for (let j = n - 2; j >= 0; j--) {
-        c[j] = z[j] - mu[j] * c[j + 1];
-        b[j] = (y[j + 1] - y[j]) / h[j] -
-            h[j] * (c[j + 1] + 2 * c[j]) / 3;
-        d[j] = (c[j + 1] - c[j]) / (3 * h[j]);
-    }
+        const ancho = canvas.width;
+        const alto = canvas.height;
 
-    let i = n - 2;
+        contexto.clearRect(0, 0, ancho, alto);
 
-    for (let j = 0; j < n - 1; j++) {
-        if (xp >= x[j] && xp <= x[j + 1]) {
-            i = j;
-            break;
-        }
-    }
+        const margen = 45;
 
-    const dx = xp - x[i];
+        const valoresX = puntos.map(p => p.x);
+        const valoresY = puntos.map(p => p.y);
 
-    return y[i] + b[i] * dx + c[i] * dx ** 2 + d[i] * dx ** 3;
-}
+        let minX = Math.min(...valoresX);
+        let maxX = Math.max(...valoresX);
+        let minY = Math.min(...valoresY);
+        let maxY = Math.max(...valoresY);
 
-function obtenerRaiz(casoId, metodo, p, tol, max) {
-    let f, df, a, b, inicial;
+        if (minX === maxX) maxX = minX + 1;
+        if (minY === maxY) maxY = minY + 1;
 
-    if (casoId === 1) {
-        f = t => p.v0 - p.a * t;
-        df = () => -p.a;
-        a = 0;
-        b = p.tiempo;
-        inicial = p.tiempo / 2;
-    } else {
-        f = t => p.D0 + p.alpha * t + p.beta * t ** 2 - p.umbral;
-        df = t => p.alpha + 2 * p.beta * t;
+        const espacioY = (maxY - minY) * 0.1;
 
-        const discriminante =
-            p.alpha ** 2 - 4 * p.beta * (p.D0 - p.umbral);
+        minY -= espacioY;
+        maxY += espacioY;
 
-        if (discriminante < 0) {
-            throw new Error("No existe una raíz real con los parámetros actuales.");
+        function px(x) {
+            return margen +
+                (x - minX) / (maxX - minX) *
+                (ancho - margen * 2);
         }
 
-        const raiz = p.beta !== 0
-            ? (-p.alpha + Math.sqrt(discriminante)) / (2 * p.beta)
-            : (p.umbral - p.D0) / p.alpha;
-
-        if (!Number.isFinite(raiz) || raiz <= 0) {
-            throw new Error("Los parámetros no producen una raíz positiva válida.");
+        function py(y) {
+            return alto - margen -
+                (y - minY) / (maxY - minY) *
+                (alto - margen * 2);
         }
 
-        a = 0;
-        b = Math.max(raiz * 2, raiz + 1);
-        inicial = raiz * 0.8;
-    }
+        // Fondo
+        contexto.fillStyle = "#ffffff";
+        contexto.fillRect(0, 0, ancho, alto);
 
-    if (metodo === "biseccion") return biseccion(f, a, b, tol, max);
-    if (metodo === "newton") return newtonRaphson(f, df, inicial, tol, max);
-    return secante(f, a, b, tol, max);
-}
+        // Cuadrícula
+        contexto.strokeStyle = "#e5e7eb";
+        contexto.lineWidth = 1;
 
-function resultadoRaiz(casoId, metodo, p, tol, max) {
-    const raiz = obtenerRaiz(casoId, metodo, p, tol, max);
-    const referencia = casoId === 1
-        ? p.v0 / p.a
-        : p.beta !== 0
-            ? (-p.alpha + Math.sqrt(p.alpha ** 2 - 4 * p.beta * (p.D0 - p.umbral))) / (2 * p.beta)
-            : (p.umbral - p.D0) / p.alpha;
+        for (let i = 0; i <= 5; i++) {
+            const x = margen +
+                i * (ancho - margen * 2) / 5;
 
-    return {
-        tipo: "raiz",
-        titulo: "Resultado de búsqueda de raíz",
-        valor: raiz.valor,
-        referencia,
-        convergio: raiz.convergio,
-        mensaje: `Raíz calculada mediante ${metodo}. Residuo final: ${raiz.residual}.`,
-        resumen: `Valor de referencia: ${referencia}.`,
-        iteraciones: raiz.iteraciones,
-        errores: [{
-            variable: "Raíz",
-            referencia,
-            aproximacion: raiz.valor,
-            ...calcularErrorEscalar(referencia, raiz.valor)
-        }],
-        puntos: raiz.iteraciones.map(f => ({ x: f.numero, y: f.aproximacion })),
-        puntosError: raiz.iteraciones.map(f => ({ x: f.numero, y: f.residual }))
-    };
-}
+            const y = margen +
+                i * (alto - margen * 2) / 5;
 
-function resultadoLineal(escenario, metodo, tol, max) {
-    const r = ejecutarMetodo(metodo, escenario.A, escenario.b, tol, max);
-    const errores = escenario.xReferencia.map((v, i) => ({
-        variable: "x" + (i + 1),
-        referencia: v,
-        aproximacion: r.x[i],
-        ...calcularErrorEscalar(v, r.x[i])
-    }));
+            contexto.beginPath();
+            contexto.moveTo(x, margen);
+            contexto.lineTo(x, alto - margen);
+            contexto.stroke();
 
-    return {
-        tipo: "lineal",
-        titulo: "Solución del sistema lineal Ax = b",
-        valor: r.x,
-        referencia: escenario.xReferencia,
-        convergio: r.convergio,
-        mensaje: r.mensaje,
-        resumen: `Residuo final: ${r.iteraciones.at(-1)?.residual ?? "No disponible"}.`,
-        iteraciones: r.iteraciones.map(f => ({
-            numero: f.numero,
-            aproximacion: f.aproximacion.join(", "),
-            residual: f.residual
-        })),
-        errores,
-        puntos: r.iteraciones.map(f => ({ x: f.numero, y: f.residual })),
-        puntosError: errores.map((e, i) => ({ x: i + 1, y: e.absoluto }))
-    };
-}
-
-function resultadoIntegracionFrenado(metodo, p, n) {
-    const limite = p.v0 / p.a;
-    const f = t => Math.max(0, p.v0 - p.a * t);
-    const exacta = p.v0 ** 2 / (2 * p.a);
-    const filas = [];
-
-    let valor;
-
-    if (metodo === "trapecio") {
-        for (let k = 1; k <= 5; k++) {
-            const nn = n * 2 ** (k - 1);
-            const v = trapecioCompuesto(f, 0, limite, nn);
-            filas.push({ numero: nn, aproximacion: v, error: Math.abs(exacta - v) });
+            contexto.beginPath();
+            contexto.moveTo(margen, y);
+            contexto.lineTo(ancho - margen, y);
+            contexto.stroke();
         }
-        valor = filas.at(-1).aproximacion;
-    } else if (metodo === "simpson") {
-        const nn = n % 2 === 0 ? n : n + 1;
-        valor = simpson13Compuesto(f, 0, limite, nn);
-        filas.push({ numero: nn, aproximacion: valor, error: Math.abs(exacta - valor) });
-    } else {
-        const R = romberg(f, 0, limite, 5);
-        filas.push(...R.map((r, i) => ({
-            numero: 2 ** i,
-            aproximacion: r[i],
-            error: Math.abs(exacta - r[i])
-        })));
-        valor = R.at(-1).at(-1);
-    }
 
-    return {
-        tipo: "integral",
-        titulo: "Distancia recorrida durante el frenado",
-        valor,
-        referencia: exacta,
-        convergio: true,
-        mensaje: "Se integró la velocidad desde el inicio hasta el tiempo de detención.",
-        resumen: `Distancia analítica: ${exacta.toFixed(8)} m. Tiempo de detención: ${limite.toFixed(8)} s.`,
-        iteraciones: filas,
-        errores: [{
-            variable: "Distancia",
-            referencia: exacta,
-            aproximacion: valor,
-            ...calcularErrorEscalar(exacta, valor)
-        }],
-        puntos: filas.map(f => ({ x: f.numero, y: f.aproximacion })),
-        puntosError: filas.map(f => ({ x: f.numero, y: f.error }))
-    };
-}
+        // Ejes
+        contexto.strokeStyle = "#64748b";
+        contexto.lineWidth = 1.5;
 
-function resultadoEDO(casoId, metodo, p, paso) {
-    const orden = metodo === "rk2" ? 2 : 4;
-    let f, edo, referencia = [];
+        contexto.beginPath();
+        contexto.moveTo(margen, margen);
+        contexto.lineTo(margen, alto - margen);
+        contexto.lineTo(ancho - margen, alto - margen);
+        contexto.stroke();
 
-    if (casoId === 1) {
-        f = (t, y) => [y[1], -p.a];
-        edo = integrarEDO(f, 0, [p.x0, p.v0], p.tiempo, paso, orden);
+        // Curva
+        contexto.strokeStyle = "#2563eb";
+        contexto.lineWidth = 2.5;
+        contexto.beginPath();
 
-        referencia = edo.filas.map(fila => ({
-            x: p.x0 + p.v0 * fila.t - 0.5 * p.a * fila.t ** 2,
-            v: p.v0 - p.a * fila.t
-        }));
-    } else {
-        f = (t, y) => {
-            const fuerza = p.fuerza * Math.sin(p.frecuencia * t);
-            return [
-                y[1],
-                (fuerza - p.amortiguamiento * y[1] - p.rigidez * y[0]) / p.masa
-            ];
-        };
+        puntos.forEach((punto, i) => {
+            const x = px(punto.x);
+            const y = py(punto.y);
 
-        edo = integrarEDO(f, 0, [p.x0, p.v0], p.tiempo, paso, orden);
-    }
-
-    const errores = casoId === 1
-        ? edo.filas.map((fila, i) => ({
-            variable: "t=" + fila.t.toFixed(4),
-            referencia: referencia[i].x,
-            aproximacion: fila.valores[0],
-            ...calcularErrorEscalar(referencia[i].x, fila.valores[0])
-        }))
-        : [];
-
-    return {
-        tipo: "edo",
-        titulo: casoId === 1 ? "Movimiento de detención" : "Respuesta oscilatoria",
-        valor: edo.resultado,
-        convergio: true,
-        mensaje: `Se aplicó Runge-Kutta ${orden === 2 ? "2 (punto medio)" : "4"}.`,
-        resumen: casoId === 1
-            ? `Tiempo analítico de detención: ${(p.v0 / p.a).toFixed(6)} s. Distancia analítica: ${(p.v0 ** 2 / (2 * p.a)).toFixed(6)} m.`
-            : `Desplazamiento máximo aproximado: ${Math.max(...edo.filas.map(f => Math.abs(f.valores[0]))).toFixed(8)} m.`,
-        iteraciones: edo.filas.map(f => ({
-            numero: f.t,
-            aproximacion: f.valores.join(", ")
-        })),
-        errores,
-        puntos: edo.filas.map(f => ({ x: f.t, y: f.valores[0] })),
-        puntosError: casoId === 1
-            ? edo.filas.map((f, i) => ({ x: f.t, y: Math.abs(f.valores[0] - referencia[i].x) }))
-            : edo.filas.map(f => ({ x: f.t, y: Math.abs(f.valores[0]) }))
-    };
-}
-
-function interpolacion(casoId, escenario, metodo, p) {
-    const cantidad = Math.max(4, Math.min(21, Math.round(p.puntos)));
-    const x = Array.from({ length: cantidad }, (_, i) => {
-        const u = i / (cantidad - 1);
-        return p.intervalo * u;
-    });
-
-    const funcionReal = t => p.amplitud * Math.sin(p.frecuencia * t);
-    const y = x.map((t, i) =>
-        funcionReal(t) + p.ruido * Math.sin((i + 1) * 12.345)
-    );
-
-    const cantidadPruebas = Math.max(3, Math.min(8, Math.round(p.ocultos)));
-    const pruebas = Array.from({ length: cantidadPruebas }, (_, i) =>
-        p.intervalo * (i + 0.5) / cantidadPruebas
-    );
-
-    const aproximar = t => {
-        if (metodo === "lagrange") return lagrange(x, y, t);
-        if (metodo === "newton-interpolacion") return newtonInterpolacion(x, y, t);
-        return splineNatural(x, y, t);
-    };
-
-    const predicciones = pruebas.map(t => {
-        const real = funcionReal(t);
-        const aproximada = aproximar(t);
-        return {
-            t,
-            real,
-            aproximada,
-            error: Math.abs(real - aproximada)
-        };
-    });
-
-    const errores = predicciones.map((r, i) => ({
-        variable: "Punto oculto " + (i + 1),
-        referencia: r.real,
-        aproximacion: r.aproximada,
-        ...calcularErrorEscalar(r.real, r.aproximada)
-    }));
-
-    return {
-        tipo: "interpolacion",
-        titulo: "Reconstrucción de señal",
-        valor: predicciones.map(r => r.aproximada),
-        convergio: true,
-        mensaje: `Se utilizaron ${cantidad} nodos y se evaluaron ${cantidadPruebas} puntos ocultos.`,
-        resumen: `Error absoluto medio: ${(errores.reduce((s, e) => s + e.absoluto, 0) / errores.length).toFixed(8)}.`,
-        iteraciones: predicciones.map((r, i) => ({
-            numero: i + 1,
-            aproximacion: r.aproximada,
-            referencia: r.real,
-            error: r.error
-        })),
-        errores,
-        puntos: x.map((t, i) => ({ x: t, y: y[i] })),
-        puntosError: predicciones.map(r => ({ x: r.t, y: r.error })),
-        puntosReferencia: predicciones.map(r => ({ x: r.t, y: r.real })),
-        puntosInterpolados: predicciones.map(r => ({ x: r.t, y: r.aproximada }))
-    };
-}
-
-function integrarOscilacion(metodo, edo, p, n) {
-    const valores = edo.filas;
-    const interpolar = t => {
-        const posicion = Math.min(
-            valores.length - 2,
-            Math.max(0, Math.floor(t / edo.paso))
-        );
-        const a = valores[posicion];
-        const b = valores[posicion + 1];
-        const proporcion = (t - a.t) / (b.t - a.t);
-        return Math.abs(a.valores[0] + proporcion * (b.valores[0] - a.valores[0]));
-    };
-
-    let valor;
-    const filas = [];
-
-    if (metodo === "trapecio") {
-        for (let k = 1; k <= 5; k++) {
-            const nn = n * 2 ** (k - 1);
-            const v = trapecioCompuesto(interpolar, 0, p.tiempo, nn);
-            filas.push({ numero: nn, aproximacion: v });
-        }
-        valor = filas.at(-1).aproximacion;
-    } else if (metodo === "simpson") {
-        const nn = n % 2 === 0 ? n : n + 1;
-        valor = simpson13Compuesto(interpolar, 0, p.tiempo, nn);
-        filas.push({ numero: nn, aproximacion: valor });
-    } else {
-        const R = romberg(interpolar, 0, p.tiempo, 5);
-        filas.push(...R.map((r, i) => ({
-            numero: 2 ** i,
-            aproximacion: r[i]
-        })));
-        valor = R.at(-1).at(-1);
-    }
-
-    return {
-        tipo: "integral",
-        titulo: "Integral de la magnitud del desplazamiento",
-        valor,
-        convergio: true,
-        mensaje: "Se integró |x(t)| a partir de la respuesta numérica del modelo oscilatorio.",
-        resumen: "La integral representa la magnitud acumulada del desplazamiento durante el intervalo.",
-        iteraciones: filas,
-        errores: [],
-        puntos: filas.map(f => ({ x: f.numero, y: f.aproximacion })),
-        puntosError: valores.map(f => ({ x: f.t, y: Math.abs(f.valores[0]) }))
-    };
-}
-
-export function ejecutarExperimento(casoId, escenario, metodo, opciones = {}) {
-    const p = {
-        ...structuredClone(parametrosCasos[casoId][escenario]),
-        ...(opciones.parametros || {})
-    };
-
-    const tol = opciones.tolerancia ?? 1e-8;
-    const max = opciones.maxIter ?? 500;
-    const paso = opciones.paso ?? 0.05;
-    const n = Math.max(2, Math.round(opciones.subintervalos ?? 20));
-
-    if (casoId === 2 && ["jacobi", "gauss-seidel", "lu", "gradiente"].includes(metodo)) {
-        return resultadoLineal(escenariosLineales[escenario], metodo, tol, max);
-    }
-
-    if ([1, 2].includes(casoId) && ["biseccion", "newton", "secante"].includes(metodo)) {
-        return resultadoRaiz(casoId, metodo, p, tol, max);
-    }
-
-    if (casoId === 1 && ["rk2", "rk4"].includes(metodo)) {
-        return resultadoEDO(1, metodo, p, paso);
-    }
-
-    if (casoId === 1 && ["trapecio", "simpson", "romberg"].includes(metodo)) {
-        return resultadoIntegracionFrenado(metodo, p, n);
-    }
-
-    if (casoId === 3 && ["rk2", "rk4"].includes(metodo)) {
-        return resultadoEDO(3, metodo, p, paso);
-    }
-
-    if (casoId === 3 && ["trapecio", "simpson", "romberg"].includes(metodo)) {
-        const edo = resultadoEDO(3, "rk4", p, paso);
-        const filas = edo.iteraciones.map(f => {
-            const partes = String(f.aproximacion).split(",").map(Number);
-            return { t: Number(f.numero), valores: partes };
+            if (i === 0) {
+                contexto.moveTo(x, y);
+            } else {
+                contexto.lineTo(x, y);
+            }
         });
 
-        const pasoEdo = filas.length > 1 ? filas[1].t - filas[0].t : paso;
-        return integrarOscilacion(metodo, { filas, paso: pasoEdo }, p, n);
+        contexto.stroke();
+
+        // Titulo
+        contexto.fillStyle = "#111827";
+        contexto.font = "bold 15px Arial";
+        contexto.textAlign = "center";
+        contexto.fillText(titulo, ancho / 2, 22);
+
+        // Etiquetas
+        contexto.font = "11px Arial";
+        contexto.fillStyle = "#475569";
+
+        contexto.textAlign = "left";
+        contexto.fillText(
+            "Y: " + redondear(maxY, 2),
+            5,
+            margen
+        );
+
+        contexto.fillText(
+            "Y: " + redondear(minY, 2),
+            5,
+            alto - margen
+        );
+
+        contexto.textAlign = "center";
+        contexto.fillText(
+            "X: " + redondear(minX, 2),
+            margen,
+            alto - 12
+        );
+
+        contexto.fillText(
+            "X: " + redondear(maxX, 2),
+            ancho - margen,
+            alto - 12
+        );
     }
 
-    if (casoId === 4 && ["lagrange", "newton-interpolacion", "spline"].includes(metodo)) {
-        return interpolacion(casoId, escenario, metodo, p);
+    // ------------------------------------------------------
+    // INTERFAZ INDEPENDIENTE
+    // ------------------------------------------------------
+
+    function crearInterfaz() {
+        if (document.getElementById("simtele-avanzados")) {
+            return;
+        }
+
+        const seccion = document.createElement("section");
+
+        seccion.id = "simtele-avanzados";
+        seccion.className = "simtele-avanzados";
+
+        seccion.innerHTML = `
+            <div class="sa-cabecera">
+                <span class="sa-etiqueta">COM-254 · MÉTODOS NUMÉRICOS</span>
+                <h2>Laboratorio de métodos avanzados</h2>
+                <p>
+                    Simulación numérica de los cuatro módulos
+                    del sistema SIMTELE-RISK.
+                </p>
+            </div>
+
+            <div class="sa-contenido">
+
+                <div class="sa-controles">
+                    <label for="sa-modulo">Módulo</label>
+
+                    <select id="sa-modulo">
+                        <option value="detencion">Detención</option>
+                        <option value="deterioro">Deterioro</option>
+                        <option value="oscilaciones">Oscilaciones</option>
+                        <option value="sensores">Sensores</option>
+                    </select>
+
+                    <div id="sa-parametros"></div>
+
+                    <button id="sa-ejecutar">
+                        Ejecutar simulación
+                    </button>
+                </div>
+
+                <div class="sa-resultados">
+                    <h3>Resultados</h3>
+
+                    <div id="sa-salida">
+                        Selecciona un módulo y ejecuta una simulación.
+                    </div>
+
+                    <h3>Representación gráfica</h3>
+
+                    <canvas
+                        id="sa-grafico"
+                        width="850"
+                        height="380">
+                    </canvas>
+                </div>
+
+            </div>
+        `;
+
+        const estilo = document.createElement("style");
+
+        estilo.textContent = `
+            .simtele-avanzados {
+                margin: 45px auto;
+                max-width: 1250px;
+                padding: 25px;
+                border-radius: 18px;
+                background: var(--card-bg, #ffffff);
+                color: var(--text-color, #172033);
+                border: 1px solid var(--border-color, #dbe2ea);
+            }
+
+            .sa-cabecera {
+                margin-bottom: 25px;
+            }
+
+            .sa-etiqueta {
+                color: #2563eb;
+                font-size: 12px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+
+            .sa-cabecera h2 {
+                margin: 8px 0;
+                font-size: 25px;
+            }
+
+            .sa-contenido {
+                display: grid;
+                grid-template-columns: 280px minmax(0, 1fr);
+                gap: 25px;
+            }
+
+            .sa-controles,
+            .sa-resultados {
+                padding: 20px;
+                border: 1px solid var(--border-color, #dbe2ea);
+                border-radius: 12px;
+            }
+
+            .sa-controles label {
+                display: block;
+                margin: 12px 0 5px;
+                font-weight: 600;
+            }
+
+            .sa-controles input,
+            .sa-controles select {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #cbd5e1;
+                border-radius: 7px;
+                box-sizing: border-box;
+                background: var(--input-bg, #ffffff);
+                color: inherit;
+            }
+
+            .sa-controles button {
+                width: 100%;
+                margin-top: 20px;
+                padding: 12px;
+                border: 0;
+                border-radius: 8px;
+                background: #2563eb;
+                color: white;
+                font-weight: bold;
+                cursor: pointer;
+            }
+
+            .sa-controles button:hover {
+                background: #1d4ed8;
+            }
+
+            .sa-resultados h3 {
+                margin-top: 0;
+            }
+
+            #sa-grafico {
+                width: 100%;
+                height: auto;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+            }
+
+            .sa-tabla {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 12px 0 20px;
+            }
+
+            .sa-tabla th,
+            .sa-tabla td {
+                padding: 9px;
+                border-bottom: 1px solid #e2e8f0;
+                text-align: left;
+            }
+
+            .sa-conclusion {
+                padding: 12px;
+                margin-top: 15px;
+                border-left: 4px solid #2563eb;
+                background: #eff6ff;
+                color: #1e3a8a;
+                border-radius: 5px;
+            }
+
+            .sa-error {
+                color: #b91c1c;
+                font-weight: bold;
+            }
+
+            @media(max-width: 800px) {
+                .sa-contenido {
+                    grid-template-columns: 1fr;
+                }
+            }
+        `;
+
+        document.head.appendChild(estilo);
+
+        const destino =
+            document.querySelector("main") ||
+            document.querySelector(".container") ||
+            document.body;
+
+        destino.appendChild(seccion);
+
+        document.getElementById("sa-modulo")
+            .addEventListener("change", actualizarParametros);
+
+        document.getElementById("sa-ejecutar")
+            .addEventListener("click", ejecutar);
+
+        actualizarParametros();
     }
 
-    throw new Error("El método seleccionado no corresponde a este módulo.");
-}
+    // ------------------------------------------------------
+    // PARAMETROS SEGUN MODULO
+    // ------------------------------------------------------
+
+    function campo(nombre, valor, id) {
+        return `
+            <label for="${id}">${nombre}</label>
+            <input
+                type="number"
+                id="${id}"
+                value="${valor}"
+                step="any">
+        `;
+    }
+
+    function obtenerValor(id, nombre) {
+        const elemento = document.getElementById(id);
+
+        if (!elemento) {
+            throw new Error("No se encontró el parámetro " + nombre);
+        }
+
+        return validarNumero(elemento.value, nombre);
+    }
+
+    function actualizarParametros() {
+        const modulo = document.getElementById("sa-modulo").value;
+        const contenedor = document.getElementById("sa-parametros");
+
+        if (modulo === "detencion") {
+            contenedor.innerHTML =
+                campo("Velocidad inicial (m/s)", 20, "sa-v0") +
+                campo("Desaceleración (m/s²)", 2, "sa-a") +
+                campo("Intervalo inicial (s)", 0, "sa-a0") +
+                campo("Intervalo final (s)", 20, "sa-b");
+        }
+
+        if (modulo === "deterioro") {
+            contenedor.innerHTML =
+                campo("Deterioro inicial", 10, "sa-d0") +
+                campo("Tasa de deterioro", 0.08, "sa-k") +
+                campo("Límite permitido", 50, "sa-limite") +
+                campo("Tiempo máximo", 30, "sa-tiempo");
+        }
+
+        if (modulo === "oscilaciones") {
+            contenedor.innerHTML =
+                campo("Desplazamiento inicial (m)", 1, "sa-y0") +
+                campo("Velocidad inicial (m/s)", 0, "sa-v0") +
+                campo("Masa (kg)", 1, "sa-masa") +
+                campo("Amortiguamiento", 0.5, "sa-amort") +
+                campo("Rigidez", 10, "sa-rigidez") +
+                campo("Tiempo final (s)", 20, "sa-tf") +
+                campo("Paso h", 0.1, "sa-h");
+        }
+
+        if (modulo === "sensores") {
+            contenedor.innerHTML = `
+                <p>
+                    Se utilizarán mediciones de ejemplo
+                    para interpolación e integración.
+                </p>
+                <p>
+                    Puntos: (0, 10), (1, 15), (2, 12),
+                    (3, 20), (4, 18).
+                </p>
+                <label for="sa-x">Punto a interpolar</label>
+                <input type="number" id="sa-x" value="2.5" step="any">
+                <label for="sa-n">Divisiones para integración</label>
+                <input type="number" id="sa-n" value="4" min="2" step="2">
+            `;
+        }
+
+        document.getElementById("sa-salida").innerHTML =
+            "Parámetros actualizados. Ejecuta la simulación.";
+    }
+
+    // ------------------------------------------------------
+    // MOSTRAR RESULTADOS
+    // ------------------------------------------------------
+
+    function mostrarResultados(html, puntos, titulo) {
+        document.getElementById("sa-salida").innerHTML = html;
+
+        dibujarGrafico(
+            document.getElementById("sa-grafico"),
+            puntos,
+            titulo
+        );
+    }
+
+    function tablaResultados(resultados) {
+        let html = `
+            <table class="sa-tabla">
+                <thead>
+                    <tr>
+                        <th>Método</th>
+                        <th>Resultado</th>
+                        <th>Error</th>
+                        <th>Iteraciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        resultados.forEach(r => {
+            html += `
+                <tr>
+                    <td>${r.metodo}</td>
+                    <td>${redondear(r.resultado)}</td>
+                    <td>${redondear(r.error, 9)}</td>
+                    <td>${r.iteraciones}</td>
+                </tr>
+            `;
+        });
+
+        html += "</tbody></table>";
+
+        return html;
+    }
+
+    // ------------------------------------------------------
+    // EJECUCION DE LOS CUATRO MODULOS
+    // ------------------------------------------------------
+
+    function ejecutarDetencion() {
+        const v0 = obtenerValor("sa-v0", "velocidad inicial");
+        const a = obtenerValor("sa-a", "desaceleración");
+        const inicio = obtenerValor("sa-a0", "intervalo inicial");
+        const fin = obtenerValor("sa-b", "intervalo final");
+
+        if (v0 <= 0 || a <= 0 || fin <= inicio) {
+            throw new Error("Revisa la velocidad, desaceleración e intervalo.");
+        }
+
+        const f = t => v0 - a * t;
+
+        const resultados = [
+            biseccion(f, inicio, fin),
+            newton(f, fin / 2),
+            secante(f, inicio, fin)
+        ];
+
+        const puntos = crearPuntos(
+            inicio,
+            fin,
+            100,
+            f
+        );
+
+        const html =
+            tablaResultados(resultados) +
+            `<div class="sa-conclusion">
+                La simulación estima el tiempo necesario para
+                que el vehículo alcance velocidad cero.
+                El resultado esperado es ${redondear(v0 / a)} segundos.
+            </div>`;
+
+        mostrarResultados(
+            html,
+            puntos,
+            "Velocidad durante la detención"
+        );
+    }
+
+    function ejecutarDeterioro() {
+        const d0 = obtenerValor("sa-d0", "deterioro inicial");
+        const k = obtenerValor("sa-k", "tasa de deterioro");
+        const limite = obtenerValor("sa-limite", "límite");
+        const tiempo = obtenerValor("sa-tiempo", "tiempo máximo");
+
+        if (d0 <= 0 || k <= 0 || limite <= d0 || tiempo <= 0) {
+            throw new Error("Los parámetros de deterioro no son válidos.");
+        }
+
+        const f = t => d0 * Math.exp(k * t) - limite;
+
+        const resultados = [
+            biseccion(f, 0, tiempo),
+            newton(f, tiempo / 2),
+            secante(f, 0, tiempo)
+        ];
+
+        const puntos = crearPuntos(
+            0,
+            tiempo,
+            100,
+            t => d0 * Math.exp(k * t)
+        );
+
+        const html =
+            tablaResultados(resultados) +
+            `<div class="sa-conclusion">
+                Se estima el tiempo en el que el deterioro
+                alcanza el límite permitido.
+                Un valor mayor indica una condición de mayor riesgo.
+            </div>`;
+
+        mostrarResultados(
+            html,
+            puntos,
+            "Evolución del deterioro"
+        );
+    }
+
+    function ejecutarOscilaciones() {
+        const y0 = obtenerValor("sa-y0", "desplazamiento inicial");
+        const v0 = obtenerValor("sa-v0", "velocidad inicial");
+        const masa = obtenerValor("sa-masa", "masa");
+        const amort = obtenerValor("sa-amort", "amortiguamiento");
+        const rigidez = obtenerValor("sa-rigidez", "rigidez");
+        const tf = obtenerValor("sa-tf", "tiempo final");
+        const h = obtenerValor("sa-h", "paso");
+
+        if (
+            masa <= 0 ||
+            rigidez <= 0 ||
+            tf <= 0 ||
+            h <= 0 ||
+            amort < 0
+        ) {
+            throw new Error("Los parámetros del sistema oscilatorio no son válidos.");
+        }
+
+        const f = (t, y) => y;
+
+        const heunResultado = heun(
+            (t, y) => {
+                // Aproximación escalar no usada para el sistema completo.
+                return y;
+            },
+            y0,
+            0,
+            tf,
+            h
+        );
+
+        const rk = oscilacionRK4(
+            y0,
+            v0,
+            masa,
+            amort,
+            rigidez,
+            tf,
+            h
+        );
+
+        const puntos = rk.map(p => ({
+            x: p.x,
+            y: p.y
+        }));
+
+        const ultimo = rk[rk.length - 1];
+
+        const html = `
+            <p><strong>Método:</strong> Runge-Kutta de cuarto orden.</p>
+            <p><strong>Desplazamiento final:</strong>
+                ${redondear(ultimo.y)} m</p>
+            <p><strong>Velocidad final:</strong>
+                ${redondear(ultimo.velocidad)} m/s</p>
+            <p><strong>Puntos calculados:</strong> ${rk.length}</p>
+            <div class="sa-conclusion">
+                El método RK4 aproxima el comportamiento del
+                sistema oscilatorio considerando masa, rigidez
+                y amortiguamiento. La curva permite observar
+                la evolución de las vibraciones.
+            </div>
+        `;
+
+        mostrarResultados(
+            html,
+            puntos,
+            "Desplazamiento del sistema oscilatorio"
+        );
+    }
+
+    function ejecutarSensores() {
+        const x = obtenerValor("sa-x", "punto de interpolación");
+        const n = obtenerValor("sa-n", "divisiones");
+
+        if (n < 2 || n % 2 !== 0 || !Number.isInteger(n)) {
+            throw new Error("Simpson requiere un número par de divisiones.");
+        }
+
+        const datos = [
+            { x: 0, y: 10 },
+            { x: 1, y: 15 },
+            { x: 2, y: 12 },
+            { x: 3, y: 20 },
+            { x: 4, y: 18 }
+        ];
+
+        const interpolado = lagrange(datos, x);
+
+        const funcion = valor => lagrange(datos, valor);
+
+        const areaTrapecio = trapecio(
+            funcion,
+            0,
+            4,
+            n
+        );
+
+        const areaSimpson = simpson(
+            funcion,
+            0,
+            4,
+            n
+        );
+
+        const puntos = crearPuntos(
+            0,
+            4,
+            100,
+            funcion
+        );
+
+        const html = `
+            <p><strong>Interpolación en x = ${x}:</strong>
+                ${redondear(interpolado)}</p>
+            <p><strong>Integral por trapecio:</strong>
+                ${redondear(areaTrapecio)}</p>
+            <p><strong>Integral por Simpson 1/3:</strong>
+                ${redondear(areaSimpson)}</p>
+            <div class="sa-conclusion">
+                La interpolación estima una medición entre
+                puntos conocidos. La integración aproxima
+                el área acumulada de la señal registrada.
+            </div>
+        `;
+
+        mostrarResultados(
+            html,
+            puntos,
+            "Interpolación de mediciones de sensores"
+        );
+    }
+
+    // ------------------------------------------------------
+    // CONTROL PRINCIPAL
+    // ------------------------------------------------------
+
+    function ejecutar() {
+        try {
+            const modulo =
+                document.getElementById("sa-modulo").value;
+
+            if (modulo === "detencion") {
+                ejecutarDetencion();
+            }
+
+            if (modulo === "deterioro") {
+                ejecutarDeterioro();
+            }
+
+            if (modulo === "oscilaciones") {
+                ejecutarOscilaciones();
+            }
+
+            if (modulo === "sensores") {
+                ejecutarSensores();
+            }
+
+        } catch (error) {
+            document.getElementById("sa-salida").innerHTML =
+                `<p class="sa-error">
+                    Error: ${error.message}
+                </p>`;
+        }
+    }
+
+    // ------------------------------------------------------
+    // INICIALIZACION
+    // ------------------------------------------------------
+
+    function iniciar() {
+        crearInterfaz();
+        console.log(
+            "SIMTELE-RISK: módulo de métodos avanzados iniciado."
+        );
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", iniciar);
+    } else {
+        iniciar();
+    }
+
+    // API pública para futuras ampliaciones
+    window.SIMTELEAvanzados = {
+        biseccion,
+        newton,
+        secante,
+        heun,
+        rungeKutta4,
+        oscilacionRK4,
+        lagrange,
+        trapecio,
+        simpson,
+        dibujarGrafico
+    };
+
+})();
