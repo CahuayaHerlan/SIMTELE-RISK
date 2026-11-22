@@ -1,69 +1,40 @@
-// ============================================
-// SIMTELE-RISK - TEORÍA DE ERRORES
-// ============================================
 
-import {
-    calcularResiduo,
-    normaInf
-} from "./metodos.js";
+import { calcularResiduo, normaInf } from "./metodos.js";
 
-export function calcularErrores(
-    aproximacion,
-    referencia,
-    A,
-    b
-) {
-    let errores = [];
+export function calcularErrorEscalar(referencia, aproximacion) {
+    const absoluto = Math.abs(referencia - aproximacion);
+    const relativo = referencia !== 0
+        ? absoluto / Math.abs(referencia)
+        : null;
 
-    for (let i = 0; i < referencia.length; i++) {
-        let errorAbsoluto = Math.abs(
-            referencia[i] - aproximacion[i]
-        );
+    return {
+        absoluto,
+        relativo,
+        porcentual: relativo === null ? null : relativo * 100
+    };
+}
 
-        let errorRelativo = null;
-        let errorPorcentual = null;
+export function calcularErrores(aproximacion, referencia, A, b) {
+    const errores = referencia.map((valor, i) => ({
+        variable: "x" + (i + 1),
+        referencia: valor,
+        aproximacion: aproximacion[i],
+        ...calcularErrorEscalar(valor, aproximacion[i])
+    }));
 
-        if (referencia[i] !== 0) {
-            errorRelativo =
-                errorAbsoluto / Math.abs(referencia[i]);
-
-            errorPorcentual = errorRelativo * 100;
-        }
-
-        errores.push({
-            variable: "x" + (i + 1),
-            referencia: referencia[i],
-            aproximacion: aproximacion[i],
-            absoluto: errorAbsoluto,
-            relativo: errorRelativo,
-            porcentual: errorPorcentual
-        });
-    }
-
-    let residuoVector = calcularResiduo(
-        A,
-        b,
-        aproximacion
-    );
+    const residuoVector = calcularResiduo(A, b, aproximacion);
 
     return {
         errores,
         residuoVector,
         normaResiduo: normaInf(residuoVector),
-        errorMaximo: Math.max(
-            ...errores.map(e => e.absoluto)
-        )
+        errorMaximo: Math.max(...errores.map(e => e.absoluto))
     };
 }
 
 export function formatoNumero(valor) {
-    if (valor === null || valor === undefined) {
+    if (valor === null || valor === undefined || !Number.isFinite(Number(valor))) {
         return "No definido";
     }
-
-    if (!Number.isFinite(valor)) {
-        return "No definido";
-    }
-
     return Number(valor).toExponential(6);
 }
