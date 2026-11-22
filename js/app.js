@@ -1,384 +1,265 @@
-// ============================================
-// SIMTELE-RISK - APLICACIÓN PRINCIPAL
-// ============================================
 
 import {
     casos,
-    escenariosLineales,
-    metodosDisponibles
+    parametrosCasos,
+    metodosPorCaso
 } from "./datos.js";
 
-import {
-    ejecutarMetodo
-} from "./metodos.js";
-
-import {
-    calcularErrores,
-    formatoNumero
-} from "./errores.js";
+import { ejecutarExperimento } from "./metodos_avanzados.js";
+import { formatoNumero } from "./errores.js";
 
 import {
     abrirBaseDatos,
     inicializarDatos,
     guardarSimulacion,
     obtenerHistorial,
-    recuperarSimulacion
+    recuperarSimulacion,
+    eliminarSimulacion
 } from "./database.js";
 
-// ============================================
-// ELEMENTOS DE LA INTERFAZ
-// ============================================
+const $ = id => document.getElementById(id);
 
-const contenedorCasos = document.getElementById("casos");
-const selectorEscenario = document.getElementById("escenario");
-const selectorMetodo = document.getElementById("metodo");
-const botonEjecutar = document.getElementById("ejecutar");
-const botonGuardar = document.getElementById("guardar");
-const contenedorResultado = document.getElementById("resultado");
-const contenedorIteraciones = document.getElementById("tabla-iteraciones");
-const contenedorErrores = document.getElementById("tabla-errores");
-const contenedorHistorial = document.getElementById("historial");
-const mensajeEstado = document.getElementById("mensaje-estado");
-
-let casoSeleccionado = 2;
+let casoSeleccionado = 1;
 let ultimaEjecucion = null;
 
-// ============================================
-// MOSTRAR LOS CUATRO CASOS
-// ============================================
+const selectorEscenario = $("escenario");
+const selectorMetodo = $("metodo");
+const botonGuardar = $("guardar");
+
+function nombreEscenario(valor) {
+    return valor.replaceAll("_", " ");
+}
+
+function obtenerNombreMetodo(id) {
+    const lista = metodosPorCaso[casoSeleccionado] || [];
+    const metodo = lista.find(item => item[0] === id);
+    return metodo ? metodo[1] : id;
+}
 
 function mostrarCasos() {
-    contenedorCasos.innerHTML = "";
-
-    casos.forEach(caso => {
-        const tarjeta = document.createElement("article");
-
-        tarjeta.className = "case-card";
-
-        tarjeta.innerHTML = `
+    $("casos").innerHTML = casos.map(caso => `
+        <article class="case-card">
             <span class="case-number">MÓDULO 0${caso.id}</span>
             <h3>${caso.nombre}</h3>
             <p>${caso.descripcion}</p>
             <div class="case-model">${caso.modelo}</div>
-            <button class="case-button" data-id="${caso.id}">
-                Ver modelo
-            </button>
-        `;
-
-        contenedorCasos.appendChild(tarjeta);
-    });
+            <button class="case-button" data-id="${caso.id}">Abrir módulo</button>
+        </article>
+    `).join("");
 
     document.querySelectorAll(".case-button").forEach(boton => {
-        boton.addEventListener("click", () => {
-            seleccionarCaso(Number(boton.dataset.id));
-        });
+        boton.addEventListener("click", () => seleccionarCaso(Number(boton.dataset.id)));
     });
 }
 
-// ============================================
-// MOSTRAR INFORMACIÓN DEL CASO
-// ============================================
+function mostrarDetalle(caso) {
+    $("codigo-caso").textContent = "MÓDULO 0" + caso.id;
+    $("titulo-caso").textContent = caso.nombre;
+    $("descripcion-caso").textContent = caso.descripcion;
+    $("pregunta-caso").textContent = caso.pregunta;
+    $("modelo-caso").textContent = caso.modelo;
+    $("ecuaciones-caso").innerHTML = caso.ecuaciones.map(e => `<li>${e}</li>`).join("");
+    $("metodos-caso").textContent = caso.metodos;
 
-function seleccionarCaso(id) {
-    casoSeleccionado = id;
-
-    const caso = casos.find(c => c.id === id);
-
-    document.getElementById("titulo-caso").textContent =
-        caso.nombre;
-
-    document.getElementById("descripcion-caso").textContent =
-        caso.descripcion;
-
-    document.getElementById("pregunta-caso").textContent =
-        caso.pregunta;
-
-    document.getElementById("modelo-caso").textContent =
-        caso.modelo;
-
-    document.getElementById("ecuaciones-caso").innerHTML =
-        caso.ecuaciones.map(e => `<li>${e}</li>`).join("");
-
-    document.getElementById("metodos-caso").textContent =
-        caso.metodos;
-
-    document.getElementById("escenarios-caso").innerHTML =
-        Object.entries(caso.escenarios)
-            .map(([nombre, descripcion]) => `
-                <div class="scenario-item">
-                    <strong>${nombre.replaceAll("_", " ")}</strong>
-                    <p>${descripcion}</p>
-                </div>
-            `).join("");
-
-    document.getElementById("seccion-experimento").hidden =
-        id !== 2;
-
-    document.getElementById("detalle-caso").scrollIntoView({
-        behavior: "smooth"
-    });
+    $("escenarios-caso").innerHTML = Object.entries(caso.escenarios).map(([nombre, descripcion]) => `
+        <article class="scenario-item">
+            <strong>${nombreEscenario(nombre)}</strong>
+            <p>${descripcion}</p>
+        </article>
+    `).join("");
 }
 
-// ============================================
-// CARGAR SELECTORES
-// ============================================
+function mostrarParametros() {
+    const parametros = parametrosCasos[casoSeleccionado][selectorEscenario.value];
 
-function cargarSelectores() {
-    selectorEscenario.innerHTML = `
-        <option value="NORMAL">Normal</option>
-        <option value="ESTRES">Estrés</option>
-        <option value="MAL_CONDICIONADO">Mal condicionado</option>
-    `;
-
-    selectorMetodo.innerHTML = "";
-
-    metodosDisponibles.forEach(metodo => {
-        const opcion = document.createElement("option");
-
-        opcion.value = metodo.id;
-        opcion.textContent = metodo.nombre;
-
-        selectorMetodo.appendChild(opcion);
-    });
+    $("parametros-dinamicos").innerHTML = Object.entries(parametros).map(([nombre, valor]) => `
+        <div class="control-group">
+            <label for="param-${nombre}">${nombre}</label>
+            <input type="number" step="any" id="param-${nombre}" value="${valor}">
+        </div>
+    `).join("");
 }
 
-// ============================================
-// EJECUTAR SIMULACIÓN
-// ============================================
+function leerParametros() {
+    const parametros = {};
+    const base = parametrosCasos[casoSeleccionado][selectorEscenario.value];
 
-function ejecutarSimulacion() {
-    try {
-        const escenarioNombre = selectorEscenario.value;
-        const metodo = selectorMetodo.value;
+    for (const nombre of Object.keys(base)) {
+        const campo = $("param-" + nombre);
+        const valor = Number(campo.value);
 
-        const tolerancia = Number(
-            document.getElementById("tolerancia").value
-        );
-
-        const maxIter = Number(
-            document.getElementById("max-iter").value
-        );
-
-        if (
-            !Number.isFinite(tolerancia) ||
-            tolerancia <= 0 ||
-            !Number.isInteger(maxIter) ||
-            maxIter < 1
-        ) {
-            throw new Error(
-                "Verifica la tolerancia y el máximo de iteraciones."
-            );
+        if (!Number.isFinite(valor)) {
+            throw new Error(`El parámetro ${nombre} no es válido.`);
         }
 
-        const escenario =
-            escenariosLineales[escenarioNombre];
-
-        const resultado = ejecutarMetodo(
-            metodo,
-            escenario.A,
-            escenario.b,
-            tolerancia,
-            maxIter
-        );
-
-        const errores = calcularErrores(
-            resultado.x,
-            escenario.xReferencia,
-            escenario.A,
-            escenario.b
-        );
-
-        const nombreMetodo = metodosDisponibles.find(
-            m => m.id === metodo
-        ).nombre;
-
-        const interpretacion = generarConclusiones(
-            resultado,
-            errores,
-            escenarioNombre,
-            nombreMetodo
-        );
-
-        ultimaEjecucion = {
-            caso_id: 2,
-            escenario: escenarioNombre,
-            metodo,
-            tolerancia,
-            maxIter,
-            referencia: escenario.xReferencia,
-            resultado,
-            errores,
-            interpretacion
-        };
-
-        mostrarResultado(
-            resultado,
-            errores,
-            interpretacion,
-            nombreMetodo,
-            escenario
-        );
-
-        botonGuardar.disabled = false;
-
-        mensajeEstado.textContent =
-            "Simulación ejecutada correctamente.";
-
-    } catch (error) {
-        mensajeEstado.textContent = error.message;
-        botonGuardar.disabled = true;
+        parametros[nombre] = valor;
     }
+
+    return parametros;
 }
 
-// ============================================
-// CONCLUSIONES
-// ============================================
+function cargarMetodos() {
+    selectorMetodo.innerHTML = metodosPorCaso[casoSeleccionado]
+        .map(([id, nombre]) => `<option value="${id}">${nombre}</option>`)
+        .join("");
 
-function generarConclusiones(
-    resultado,
-    errores,
-    escenario,
-    metodo
-) {
-    let conclusionNumerica;
+    mostrarDescripcionMetodo();
+}
 
-    if (resultado.convergio) {
-        conclusionNumerica =
-            `El método ${metodo} alcanzó la tolerancia establecida. ` +
-            `El residuo máximo fue ${formatoNumero(errores.normaResiduo)} ` +
-            `y el error absoluto máximo fue ${formatoNumero(errores.errorMaximo)}.`;
-    } else {
-        conclusionNumerica =
-            `El método ${metodo} no alcanzó la tolerancia establecida. ` +
-            `Se deben revisar las iteraciones, el residuo y el comportamiento ` +
-            `del método bajo el escenario ${escenario.replaceAll("_", " ")}.`;
-    }
-
-    let conclusionProblema =
-        "El sistema lineal permite estudiar cómo se comporta un modelo " +
-        "matemático hipotético de deterioro. La solución obtenida representa " +
-        "los valores de las incógnitas del sistema y no constituye una " +
-        "medición real de una instalación de transporte.";
-
-    let conclusionIngenieria =
-        "Desde Ingeniería de Sistemas, este módulo integra el modelado " +
-        "matemático, la implementación de algoritmos, la validación de " +
-        "resultados y el almacenamiento de experimentos para facilitar " +
-        "la comparación y trazabilidad de los cálculos.";
-
-    return {
-        numerica: conclusionNumerica,
-        problema: conclusionProblema,
-        ingenieria: conclusionIngenieria
+function mostrarDescripcionMetodo() {
+    const descripciones = {
+        jacobi: "Método iterativo que utiliza los valores de la iteración anterior.",
+        "gauss-seidel": "Método iterativo que actualiza los valores durante cada iteración.",
+        lu: "Factorización LU con pivoteo parcial y sustituciones hacia adelante y atrás.",
+        gradiente: "Método de gradiente conjugado para matrices simétricas definidas positivas.",
+        biseccion: "Método cerrado que requiere un intervalo con cambio de signo.",
+        newton: "Método de Newton-Raphson basado en la derivada de la función.",
+        secante: "Método de raíces que utiliza dos aproximaciones iniciales.",
+        trapecio: "Regla del trapecio compuesta con refinamiento de subintervalos.",
+        simpson: "Regla compuesta de Simpson 1/3; utiliza un número par de subintervalos.",
+        romberg: "Integración numérica mediante extrapolación de Richardson.",
+        rk2: "Runge-Kutta de segundo orden, variante del punto medio.",
+        rk4: "Runge-Kutta clásico de cuarto orden.",
+        lagrange: "Interpolación polinómica de Lagrange.",
+        "newton-interpolacion": "Interpolación mediante diferencias divididas de Newton.",
+        spline: "Interpolación mediante splines cúbicos naturales."
     };
+
+    $("descripcion-metodo").textContent = descripciones[selectorMetodo.value] || "";
 }
 
-// ============================================
-// MOSTRAR RESULTADOS
-// ============================================
+function validarConfiguracion() {
+    const tolerancia = Number($("tolerancia").value);
+    const maxIter = Number($("max-iter").value);
+    const paso = Number($("paso").value);
+    const subintervalos = Number($("subintervalos").value);
 
-function mostrarResultado(
-    resultado,
-    errores,
-    conclusiones,
-    nombreMetodo,
-    escenario
-) {
-    contenedorResultado.innerHTML = `
-        <div class="result-grid">
-            <div class="result-box">
-                <span>ESTADO</span>
-                <strong class="${resultado.convergio ? "success" : "warning"}">
-                    ${resultado.convergio ? "CONVERGIÓ" : "NO CONVERGIÓ"}
-                </strong>
-            </div>
+    if (!(tolerancia > 0)) {
+        throw new Error("La tolerancia debe ser mayor que cero.");
+    }
+    if (!Number.isInteger(maxIter) || maxIter < 1) {
+        throw new Error("El máximo de iteraciones debe ser un entero positivo.");
+    }
+    if (!(paso > 0)) {
+        throw new Error("El paso h debe ser mayor que cero.");
+    }
+    if (!Number.isInteger(subintervalos) || subintervalos < 2) {
+        throw new Error("Los subintervalos deben ser un entero igual o mayor que 2.");
+    }
 
-            <div class="result-box">
-                <span>MÉTODO</span>
-                <strong>${nombreMetodo}</strong>
-            </div>
+    return { tolerancia, maxIter, paso, subintervalos };
+}
 
-            <div class="result-box">
-                <span>ESCENARIO</span>
-                <strong>${escenario.nombre}</strong>
-            </div>
+function crearTabla(filas) {
+    if (!filas || filas.length === 0) {
+        return "<p>No hay datos de iteraciones para mostrar.</p>";
+    }
 
-            <div class="result-box">
-                <span>ITERACIONES</span>
-                <strong>${resultado.iteraciones.length - 1}</strong>
-            </div>
+    const columnas = [...new Set(filas.flatMap(fila => Object.keys(fila)))];
 
-            <div class="result-box">
-                <span>RESIDUO MÁXIMO</span>
-                <strong>${formatoNumero(errores.normaResiduo)}</strong>
-            </div>
+    const nombres = {
+        numero: "Iteración / paso",
+        aproximacion: "Aproximación",
+        residual: "Residuo",
+        error: "Error",
+        referencia: "Referencia",
+        a: "Extremo a",
+        b: "Extremo b"
+    };
 
-            <div class="result-box">
-                <span>ERROR ABSOLUTO MÁXIMO</span>
-                <strong>${formatoNumero(errores.errorMaximo)}</strong>
-            </div>
-        </div>
-
-        <h3>Solución aproximada</h3>
-
-        <div class="solution-vector">
-            ${resultado.x.map((v, i) =>
-                `<span>x${i + 1} = ${formatoNumero(v)}</span>`
-            ).join("")}
-        </div>
-
-        <p class="method-message">${resultado.mensaje}</p>
-
-        <h3>Conclusiones del experimento</h3>
-
-        <div class="conclusion-card">
-            <h4>Conclusión numérica</h4>
-            <p>${conclusiones.numerica}</p>
-        </div>
-
-        <div class="conclusion-card">
-            <h4>Conclusión del problema</h4>
-            <p>${conclusiones.problema}</p>
-        </div>
-
-        <div class="conclusion-card">
-            <h4>Ingeniería de Sistemas</h4>
-            <p>${conclusiones.ingenieria}</p>
-        </div>
-    `;
-
-    // Tabla de iteraciones
-
-    contenedorIteraciones.innerHTML = `
+    return `
         <table>
             <thead>
-                <tr>
-                    <th>Iteración</th>
-                    <th>x₁</th>
-                    <th>x₂</th>
-                    <th>x₃</th>
-                    <th>x₄</th>
-                    <th>Residuo</th>
-                </tr>
+                <tr>${columnas.map(c => `<th>${nombres[c] || c}</th>`).join("")}</tr>
             </thead>
-
             <tbody>
-                ${resultado.iteraciones.map(iteracion => `
+                ${filas.map(fila => `
                     <tr>
-                        <td>${iteracion.numero}</td>
-                        ${iteracion.aproximacion.map(v =>
-                            `<td>${formatoNumero(v)}</td>`
-                        ).join("")}
-                        <td>${formatoNumero(iteracion.residual)}</td>
+                        ${columnas.map(c => {
+                            const valor = fila[c];
+                            return `<td>${typeof valor === "number" ? formatoNumero(valor) : (valor ?? "—")}</td>`;
+                        }).join("")}
                     </tr>
                 `).join("")}
             </tbody>
         </table>
     `;
+}
 
-    // Tabla de errores
+function dibujarGrafico(id, puntos, titulo) {
+    const canvas = $(id);
+    const ctx = canvas.getContext("2d");
+    const ancho = canvas.width;
+    const alto = canvas.height;
 
-    contenedorErrores.innerHTML = `
+    ctx.clearRect(0, 0, ancho, alto);
+    ctx.fillStyle = "#0a1426";
+    ctx.fillRect(0, 0, ancho, alto);
+
+    if (!puntos || puntos.length === 0) {
+        ctx.fillStyle = "#a5b4c8";
+        ctx.fillText("Sin datos disponibles", 25, 35);
+        return;
+    }
+
+    const xs = puntos.map((p, i) => typeof p.x === "number" ? p.x : i + 1);
+    const ys = puntos.map(p => Number(p.y));
+
+    let minX = Math.min(...xs);
+    let maxX = Math.max(...xs);
+    let minY = Math.min(...ys);
+    let maxY = Math.max(...ys);
+
+    if (minX === maxX) { minX -= 1; maxX += 1; }
+    if (minY === maxY) { minY -= 1; maxY += 1; }
+
+    const px = x => 48 + (x - minX) / (maxX - minX) * (ancho - 70);
+    const py = y => alto - 35 - (y - minY) / (maxY - minY) * (alto - 65);
+
+    ctx.strokeStyle = "#40516b";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(42, 20);
+    ctx.lineTo(42, alto - 30);
+    ctx.lineTo(ancho - 15, alto - 30);
+    ctx.stroke();
+
+    ctx.fillStyle = "#a5b4c8";
+    ctx.font = "13px Arial";
+    ctx.fillText(titulo, 48, 17);
+    ctx.fillText(maxY.toExponential(2), 3, 35);
+    ctx.fillText(minY.toExponential(2), 3, alto - 35);
+
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    puntos.forEach((p, i) => {
+        const x = px(xs[i]);
+        const y = py(ys[i]);
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+
+    ctx.stroke();
+
+    puntos.forEach((p, i) => {
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(px(xs[i]), py(ys[i]), 3, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function mostrarErrores(errores) {
+    if (!errores || errores.length === 0) {
+        $("tabla-errores").innerHTML =
+            "<p>No existe una referencia escalar directa para esta ejecución. Consulta la gráfica de respuesta.</p>";
+        return;
+    }
+
+    $("tabla-errores").innerHTML = `
         <table>
             <thead>
                 <tr>
@@ -390,16 +271,15 @@ function mostrarResultado(
                     <th>Error porcentual</th>
                 </tr>
             </thead>
-
             <tbody>
-                ${errores.errores.map(e => `
+                ${errores.map(e => `
                     <tr>
                         <td>${e.variable}</td>
                         <td>${formatoNumero(e.referencia)}</td>
                         <td>${formatoNumero(e.aproximacion)}</td>
                         <td>${formatoNumero(e.absoluto)}</td>
                         <td>${formatoNumero(e.relativo)}</td>
-                        <td>${formatoNumero(e.porcentual)}%</td>
+                        <td>${formatoNumero(e.porcentual)}</td>
                     </tr>
                 `).join("")}
             </tbody>
@@ -407,179 +287,295 @@ function mostrarResultado(
     `;
 }
 
-// ============================================
-// GUARDAR SIMULACIÓN
-// ============================================
+function generarConclusiones(resultado, metodo, escenario) {
+    const errorMaximo = resultado.errores?.length
+        ? Math.max(...resultado.errores.map(e => e.absoluto))
+        : null;
 
-async function guardarResultado() {
-    if (!ultimaEjecucion) {
-        mensajeEstado.textContent =
-            "Primero debes ejecutar una simulación.";
+    const numerica = resultado.convergio
+        ? `El método ${metodo} completó el cálculo. ${resultado.resumen || ""} ${
+            errorMaximo === null
+                ? ""
+                : "El error absoluto máximo fue " + formatoNumero(errorMaximo) + "."
+        }`
+        : `El método ${metodo} no alcanzó el criterio de convergencia. Se deben revisar el residuo, las iteraciones y la sensibilidad numérica.`;
 
-        return;
-    }
+    const aplicada = `En el escenario ${nombreEscenario(escenario)}, el resultado describe el comportamiento del modelo matemático hipotético. No representa una medición real ni confirma una falla de un sistema de transporte por cable.`;
 
+    const sistemas = "Desde Ingeniería de Sistemas, el módulo integra modelado matemático, algoritmos numéricos, validación, visualización y almacenamiento de experimentos reproducibles.";
+
+    return { numerica, aplicada, sistemas };
+}
+
+function mostrarResultado(registro) {
+    const r = registro.resultado;
+
+    const valor = Array.isArray(r.valor)
+        ? r.valor.map((v, i) => `x${i + 1} = ${formatoNumero(v)}`).join(" · ")
+        : formatoNumero(r.valor);
+
+    $("resultado").innerHTML = `
+        <div class="result-grid">
+            <div class="result-box">
+                <span>ESTADO</span>
+                <strong class="${r.convergio ? "success" : "warning"}">
+                    ${r.convergio ? "COMPLETADO" : "REVISAR"}
+                </strong>
+            </div>
+            <div class="result-box">
+                <span>MÓDULO</span>
+                <strong>${casos.find(c => c.id === registro.caso_id).nombre}</strong>
+            </div>
+            <div class="result-box">
+                <span>ESCENARIO</span>
+                <strong>${nombreEscenario(registro.escenario)}</strong>
+            </div>
+            <div class="result-box">
+                <span>MÉTODO</span>
+                <strong>${registro.nombre_metodo}</strong>
+            </div>
+        </div>
+        <h3>${r.titulo}</h3>
+        <div class="model-box">${valor}</div>
+        <p>${r.mensaje}</p>
+        <p>${r.resumen || ""}</p>
+    `;
+
+    $("tabla-iteraciones").innerHTML = crearTabla(r.iteraciones);
+    mostrarErrores(r.errores);
+
+    $("titulo-grafico-modelo").textContent =
+        r.tipo === "interpolacion" ? "Datos de entrada y evolución" : "Evolución del resultado";
+
+    $("titulo-grafico-error").textContent =
+        r.tipo === "interpolacion" ? "Error en puntos ocultos" :
+        r.tipo === "edo" ? "Magnitud de la respuesta" : "Error o residuo";
+
+    dibujarGrafico("grafico-modelo", r.puntos, "Resultado");
+    dibujarGrafico("grafico-error", r.puntosError, "Error / comparación");
+
+    $("conclusiones").innerHTML = `
+        <article class="conclusion-card">
+            <h3>Conclusión numérica</h3>
+            <p>${registro.conclusiones.numerica}</p>
+        </article>
+        <article class="conclusion-card">
+            <h3>Conclusión del problema</h3>
+            <p>${registro.conclusiones.aplicada}</p>
+        </article>
+        <article class="conclusion-card">
+            <h3>Ingeniería de Sistemas</h3>
+            <p>${registro.conclusiones.sistemas}</p>
+        </article>
+    `;
+}
+
+function ejecutarSimulacion() {
     try {
-        const id = await guardarSimulacion(
-            ultimaEjecucion
+        const configuracion = validarConfiguracion();
+        const parametros = leerParametros();
+        const metodo = selectorMetodo.value;
+        const escenario = selectorEscenario.value;
+
+        const resultado = ejecutarExperimento(
+            casoSeleccionado,
+            escenario,
+            metodo,
+            {
+                tolerancia: configuracion.tolerancia,
+                maxIter: configuracion.maxIter,
+                paso: configuracion.paso,
+                subintervalos: configuracion.subintervalos,
+                parametros
+            }
         );
 
-        mensajeEstado.textContent =
-            "Simulación guardada. Código: " + id;
+        const conclusiones = generarConclusiones(
+            resultado,
+            obtenerNombreMetodo(metodo),
+            escenario
+        );
 
-        await mostrarHistorial();
+        ultimaEjecucion = {
+            caso_id: casoSeleccionado,
+            escenario,
+            metodo,
+            nombre_metodo: obtenerNombreMetodo(metodo),
+            configuracion,
+            parametros,
+            resultado,
+            conclusiones
+        };
 
+        mostrarResultado(ultimaEjecucion);
+        botonGuardar.disabled = false;
+
+        $("mensaje-estado").textContent =
+            "Experimento ejecutado correctamente. Puedes guardarlo en el historial.";
     } catch (error) {
-        mensajeEstado.textContent =
-            "Error al guardar: " + error.message;
+        ultimaEjecucion = null;
+        botonGuardar.disabled = true;
+        $("mensaje-estado").textContent = "No se pudo ejecutar: " + error.message;
     }
 }
 
-// ============================================
-// MOSTRAR HISTORIAL
-// ============================================
+async function guardarResultado() {
+    if (!ultimaEjecucion) return;
+
+    try {
+        const id = await guardarSimulacion(ultimaEjecucion);
+        $("mensaje-estado").textContent = "Simulación guardada. ID: " + id;
+        await mostrarHistorial();
+    } catch (error) {
+        $("mensaje-estado").textContent = "Error al guardar: " + error.message;
+    }
+}
 
 async function mostrarHistorial() {
     try {
         const historial = await obtenerHistorial();
+        const filtro = $("buscar-historial").value.toLowerCase();
 
-        if (historial.length === 0) {
-            contenedorHistorial.innerHTML =
-                "<p>No existen simulaciones guardadas.</p>";
-
-            return;
-        }
-
-        contenedorHistorial.innerHTML = historial.map(item => `
-            <div class="history-item">
-                <div>
-                    <strong>
-                        ${item.escenario.replaceAll("_", " ")}
-                    </strong>
-
-                    <p>
-                        ${item.ejecucion?.metodo || "Sin método"}
-                        · ${new Date(item.fecha).toLocaleString()}
-                    </p>
-
-                    <span>${item.estado}</span>
-                </div>
-
-                <button data-id="${item.id}" class="history-button">
-                    Recuperar
-                </button>
-            </div>
-        `).join("");
-
-        document.querySelectorAll(".history-button").forEach(boton => {
-            boton.addEventListener("click", () => {
-                recuperarResultado(Number(boton.dataset.id));
-            });
+        const filtrados = historial.filter(item => {
+            const caso = casos.find(c => c.id === item.caso_id)?.nombre || "";
+            return `${caso} ${item.metodo} ${item.nombre_metodo} ${item.escenario}`
+                .toLowerCase()
+                .includes(filtro);
         });
 
-    } catch (error) {
-        contenedorHistorial.textContent =
-            "No se pudo recuperar el historial: " + error.message;
-    }
-}
-
-// ============================================
-// RECUPERAR SIMULACIÓN GUARDADA
-// ============================================
-
-async function recuperarResultado(id) {
-    try {
-        const datos = await recuperarSimulacion(id);
-
-        if (!datos) {
-            mensajeEstado.textContent =
-                "No se encontró la simulación.";
-
+        if (filtrados.length === 0) {
+            $("historial").innerHTML = "<p>No hay simulaciones guardadas que coincidan con la búsqueda.</p>";
             return;
         }
 
-        const escenarioNombre = datos.simulacion.escenario;
-        const escenario = escenariosLineales[escenarioNombre];
+        $("historial").innerHTML = filtrados.map(item => {
+            const caso = casos.find(c => c.id === item.caso_id)?.nombre || "Módulo";
 
-        const ejecucion = datos.ejecucion;
+            return `
+                <article class="history-item">
+                    <div>
+                        <strong>${caso} · ${nombreEscenario(item.escenario)}</strong>
+                        <p>${item.nombre_metodo} · ${new Date(item.fecha).toLocaleString()}</p>
+                        <small>ID: ${item.id}</small>
+                    </div>
+                    <div class="history-actions">
+                        <button class="secondary-button" data-recuperar="${item.id}">Recuperar</button>
+                        <button class="secondary-button" data-relanzar="${item.id}">Relanzar</button>
+                        <button class="danger-button" data-eliminar="${item.id}">Eliminar</button>
+                    </div>
+                </article>
+            `;
+        }).join("");
 
-        const resultado = {
-            x: ejecucion.aproximacion_final,
-            convergio: ejecucion.convergio,
-            mensaje: ejecucion.mensaje,
-            iteraciones: datos.iteraciones.map(i => ({
-                numero: i.numero,
-                aproximacion: i.aproximacion,
-                residual: i.residual
-            }))
-        };
+        $("historial").querySelectorAll("[data-recuperar]").forEach(boton => {
+            boton.addEventListener("click", () => recuperarResultado(boton.dataset.recuperar, false));
+        });
 
-        const resumen = datos.resumen;
+        $("historial").querySelectorAll("[data-relanzar]").forEach(boton => {
+            boton.addEventListener("click", () => recuperarResultado(boton.dataset.relanzar, true));
+        });
 
-        const errores = {
-            errores: resumen.errores.errores,
-            normaResiduo: resumen.errores.normaResiduo,
-            errorMaximo: resumen.errores.errorMaximo
-        };
-
-        mostrarResultado(
-            resultado,
-            errores,
-            resumen.interpretacion,
-            ejecucion.metodo,
-            escenario
-        );
-
-        casoSeleccionado = 2;
-
-        selectorEscenario.value = escenarioNombre;
-        selectorMetodo.value = ejecucion.metodo;
-
-        document.getElementById("seccion-experimento").hidden = false;
-
-        ultimaEjecucion = null;
-        botonGuardar.disabled = true;
-
-        mensajeEstado.textContent =
-            "Simulación histórica recuperada correctamente.";
-
+        $("historial").querySelectorAll("[data-eliminar]").forEach(boton => {
+            boton.addEventListener("click", async () => {
+                if (confirm("¿Eliminar esta simulación?")) {
+                    await eliminarSimulacion(boton.dataset.eliminar);
+                    await mostrarHistorial();
+                }
+            });
+        });
     } catch (error) {
-        mensajeEstado.textContent =
-            "Error al recuperar: " + error.message;
+        $("historial").textContent = "No se pudo cargar el historial: " + error.message;
     }
 }
 
-// ============================================
-// INICIO
-// ============================================
+async function recuperarResultado(id, relanzar) {
+    try {
+        const registro = await recuperarSimulacion(id);
 
-async function iniciarAplicacion() {
+        if (!registro) {
+            throw new Error("No se encontró el experimento.");
+        }
+
+        seleccionarCaso(registro.caso_id, false);
+        selectorEscenario.value = registro.escenario;
+        mostrarParametros();
+
+        for (const [nombre, valor] of Object.entries(registro.parametros)) {
+            const campo = $("param-" + nombre);
+            if (campo) campo.value = valor;
+        }
+
+        $("tolerancia").value = registro.configuracion.tolerancia;
+        $("max-iter").value = registro.configuracion.maxIter;
+        $("paso").value = registro.configuracion.paso;
+        $("subintervalos").value = registro.configuracion.subintervalos;
+        selectorMetodo.value = registro.metodo;
+        mostrarDescripcionMetodo();
+
+        if (relanzar) {
+            ejecutarSimulacion();
+            $("mensaje-estado").textContent = "Experimento recuperado y cálculo relanzado.";
+        } else {
+            ultimaEjecucion = registro;
+            mostrarResultado(registro);
+            botonGuardar.disabled = false;
+            $("mensaje-estado").textContent = "Resultados históricos recuperados.";
+        }
+
+        $("seccion-experimento").scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+        $("mensaje-estado").textContent = "Error al recuperar: " + error.message;
+    }
+}
+
+function seleccionarCaso(id, desplazar = true) {
+    casoSeleccionado = id;
+
+    const caso = casos.find(c => c.id === id);
+    mostrarDetalle(caso);
+    cargarMetodos();
+    mostrarParametros();
+
+    $("resultado").innerHTML = "";
+    $("tabla-iteraciones").innerHTML = "";
+    $("tabla-errores").innerHTML = "";
+    $("conclusiones").innerHTML = "";
+
+    dibujarGrafico("grafico-modelo", [], "Resultado");
+    dibujarGrafico("grafico-error", [], "Error");
+
+    ultimaEjecucion = null;
+    botonGuardar.disabled = true;
+    $("mensaje-estado").textContent = "Configura el escenario y ejecuta un método.";
+
+    if (desplazar) {
+        $("detalle-caso").scrollIntoView({ behavior: "smooth" });
+    }
+}
+
+async function iniciar() {
     try {
         await abrirBaseDatos();
         await inicializarDatos();
 
         mostrarCasos();
-        cargarSelectores();
-        seleccionarCaso(2);
+        seleccionarCaso(1, false);
+
+        selectorEscenario.addEventListener("change", mostrarParametros);
+        selectorMetodo.addEventListener("change", mostrarDescripcionMetodo);
+        $("ejecutar").addEventListener("click", ejecutarSimulacion);
+        botonGuardar.addEventListener("click", guardarResultado);
+        $("actualizar-historial").addEventListener("click", mostrarHistorial);
+        $("buscar-historial").addEventListener("input", mostrarHistorial);
+
         await mostrarHistorial();
 
-        mensajeEstado.textContent =
-            "Base de datos conectada correctamente.";
-
+        $("mensaje-estado").textContent =
+            "Aplicación lista. Selecciona un módulo y ejecuta un experimento.";
     } catch (error) {
-        mensajeEstado.textContent =
-            "No se pudo iniciar la base de datos: " + error.message;
+        $("mensaje-estado").textContent =
+            "No se pudo iniciar la aplicación: " + error.message;
     }
 }
 
-botonEjecutar.addEventListener(
-    "click",
-    ejecutarSimulacion
-);
-
-botonGuardar.addEventListener(
-    "click",
-    guardarResultado
-);
-
-iniciarAplicacion();
+iniciar();
