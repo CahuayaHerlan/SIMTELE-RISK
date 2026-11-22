@@ -92,6 +92,7 @@ SIMTELE-RISK/
 │   ├── errores.js
 │   ├── database.js
 │   └── app.js
+|   |__ metodos_avanzados.js
 │
 └── database/
     └── schema.sql
